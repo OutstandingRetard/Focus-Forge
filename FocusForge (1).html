@@ -1,0 +1,170 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row =>
+                    row.some(cell => cell !== '' && cell !== null && cell !== undefined)
+                );
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus Forge</title>
+  <style>
+    body { display: flex; flex-direction: column; align-items: center; background: #f0f0f0; font-family: Arial, sans-serif; margin: 0; }
+    canvas { border: 2px solid #333; background: #fff; width: 100%; max-width: 600px; height: auto; }
+    #score { font-size: 24px; margin: 10px; }
+    #timer { font-size: 20px; color: red; }
+    #tryAgain { display: none; padding: 10px 20px; font-size: 18px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 5px; margin-top: 10px; }
+    #tryAgain:hover { background: #0056b3; }
+  </style>
+</head>
+<body>
+  <div id="score">Score: 0</div>
+  <div id="timer">Time: 30</div>
+  <canvas id="gameCanvas" width="600" height="400"></canvas>
+  <button id="tryAgain">Try Again</button>
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreDisplay = document.getElementById('score');
+    const timerDisplay = document.getElementById('timer');
+    const tryAgainButton = document.getElementById('tryAgain');
+
+    let score = 0;
+    let timeLeft = 30;
+    let gameActive = true;
+    let target = { x: 300, y: 200, radius: window.innerWidth < 768 ? 30 : 20, speed: 2 };
+    let distractions = [];
+
+    function moveTarget() {
+      target.x += (Math.random() - 0.5) * target.speed * 10;
+      target.y += (Math.random() - 0.5) * target.speed * 10;
+      target.x = Math.max(target.radius, Math.min(canvas.width - target.radius, target.x));
+      target.y = Math.max(target.radius, Math.min(canvas.height - target.radius, target.y));
+    }
+
+    function createDistraction() {
+      if (Math.random() < 0.05 && distractions.length < 3) {
+        distractions.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          radius: 15,
+          color: `hsl(${Math.random() * 360}, 70%, 50%)`
+        });
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Draw target
+      ctx.beginPath();
+      ctx.arc(target.x, target.y, target.radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'blue';
+      ctx.fill();
+      // Draw distractions
+      distractions.forEach(d => {
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+        ctx.fillStyle = d.color;
+        ctx.fill();
+      });
+    }
+
+    function update() {
+      if (!gameActive) return;
+      moveTarget();
+      createDistraction();
+      draw();
+      scoreDisplay.textContent = `Score: ${score}`;
+      requestAnimationFrame(update);
+    }
+
+    function updateTimer() {
+      if (!gameActive) return;
+      timeLeft -= 0.1;
+      timerDisplay.textContent = `Time: ${Math.ceil(timeLeft)}`;
+      if (timeLeft <= 0) {
+        gameActive = false;
+        const result = score >= 0 ? 'You Win!' : 'You Lose!';
+        alert(`Game Over! Final Score: ${score}\n${result}`);
+        tryAgainButton.style.display = 'block';
+      } else {
+        setTimeout(updateTimer, 100);
+      }
+    }
+
+    function resetGame() {
+      score = 0;
+      timeLeft = 30;
+      target.speed = 2;
+      target.x = 300;
+      target.y = 200;
+      distractions = [];
+      gameActive = true;
+      scoreDisplay.textContent = `Score: ${score}`;
+      timerDisplay.textContent = `Time: ${Math.ceil(timeLeft)}`;
+      tryAgainButton.style.display = 'none';
+      update();
+      updateTimer();
+    }
+
+    canvas.addEventListener('click', (e) => {
+      if (!gameActive) return;
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      // Check if target is hit
+      const distToTarget = Math.sqrt((clickX - target.x) ** 2 + (clickY - target.y) ** 2);
+      if (distToTarget < target.radius) {
+        score += 10;
+        target.speed += 0.1; // Increase difficulty
+        distractions = distractions.filter(d => Math.random() > 0.3); // Clear some distractions
+      }
+
+      // Check if distraction is hit
+      let hitDistraction = false;
+      distractions.forEach(d => {
+        const distToDistraction = Math.sqrt((clickX - d.x) ** 2 + (clickY - d.y) ** 2);
+        if (distToDistraction < d.radius) {
+          score -= 5;
+          hitDistraction = true;
+        }
+      });
+
+      if (!hitDistraction && distToTarget >= target.radius) {
+        score -= 5; // Penalty for missing
+      }
+    });
+
+    tryAgainButton.addEventListener('click', resetGame);
+
+    update();
+    updateTimer();
+  </script>
+</body>
+</html>
